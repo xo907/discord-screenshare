@@ -66,7 +66,51 @@ async function unquotePath(input, base) {
   for (const c of candidates) {
     if (await isFile(path.resolve(base, c))) return c;
   }
+  for (const c of candidates) {
+    const match = await fuzzyResolve(path.resolve(base, c));
+    if (match) return match;
+  }
   return candidates[1];
+}
+
+// Makes names comparable despite things you can't see when typing them:
+// non-breaking/double spaces, fancy dashes and quotes, letter case.
+function looseName(name) {
+  return name
+    .normalize("NFKC")
+    .replace(/[‐-―−]/g, "-")
+    .replace(/[‘’“”]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+// Walks the path one folder at a time. Where a part doesn't exist exactly,
+// picks the single entry whose name matches loosely, or the single entry
+// that starts with what was typed (so "!play movies/Salmokji" works).
+async function fuzzyResolve(full) {
+  let current = path.parse(full).root;
+  const parts = full.slice(current.length).split(path.sep).filter(Boolean);
+  for (const part of parts) {
+    const exact = path.join(current, part);
+    try {
+      await withTimeout(stat(exact), 10_000, "timeout");
+      current = exact;
+      continue;
+    } catch {}
+    let entries;
+    try {
+      entries = await withTimeout(readdir(current), 10_000, "timeout");
+    } catch {
+      return null;
+    }
+    const want = looseName(part);
+    let found = entries.filter((e) => looseName(e) === want);
+    if (found.length !== 1) found = entries.filter((e) => looseName(e).startsWith(want));
+    if (found.length !== 1) return null;
+    current = path.join(current, found[0]);
+  }
+  return (await isFile(current)) ? current : null;
 }
 
 // Turns what the user typed into an absolute path, or throws a friendly error.
