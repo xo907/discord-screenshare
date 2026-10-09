@@ -187,7 +187,21 @@ async function play(msg, input) {
 
   if (streamer.voiceConnection?.channelId !== channel.id) {
     log(`joining ${channel.guild.name} / ${channel.name}`);
-    await withTimeout(streamer.joinVoice(channel.guild.id, channel.id), 20_000, "Timed out joining the voice channel.");
+    try {
+      await withTimeout(streamer.joinVoice(channel.guild.id, channel.id), 20_000, "timeout");
+    } catch (err) {
+      if (err.message !== "timeout") throw err;
+      const s = streamer.voiceConnection?.status ?? {};
+      log("join timed out, voice status:", JSON.stringify(s));
+      streamer.leaveVoice();
+      if (!s.hasSession && !s.hasToken) {
+        throw new Error("Discord never let me into the channel. Check that this account has the **Connect** permission there and the channel isn't full.");
+      }
+      if (!s.hasSession || !s.hasToken) {
+        throw new Error(`Discord only half-answered the join (session: ${!!s.hasSession}, server: ${!!s.hasToken}). Try again in a moment.`);
+      }
+      throw new Error("Got into the channel but couldn't connect to Discord's voice server. Usually a firewall/VPN blocking it; see the terminal.");
+    }
     if (channel instanceof StageChannel) {
       await streamer.client.user.voice.setSuppressed(false);
     }
@@ -276,6 +290,15 @@ const COMMANDS = new Set(["play", "stop", "leave", "now", "volume", "list", "hel
 streamer.client.on("ready", () => {
   log(`logged in as ${streamer.client.user.tag}`);
   log(`listening for "${config.prefix}" commands from: ${config.allowedUsers.join(", ") || "(nobody: allowedUsers is empty)"}`);
+});
+
+// Voice handshake progress, so join problems show where they stall.
+streamer.client.on("raw", (packet) => {
+  if (packet.t === "VOICE_STATE_UPDATE" && packet.d?.user_id === streamer.client.user?.id) {
+    log(`voice state: channel=${packet.d.channel_id ?? "none"}`);
+  } else if (packet.t === "VOICE_SERVER_UPDATE") {
+    log(`voice server: ${packet.d?.endpoint ?? "none"}`);
+  }
 });
 
 streamer.client.on("messageCreate", async (msg) => {
