@@ -13,7 +13,7 @@ const config = {
   allowedUsers: [],
   mediaDir: "",
   restrictToMediaDir: false,
-  encoder: "v4l2m2m",
+  encoder: "auto",
   hardwareDecoding: true,
   width: 1280,
   height: 720,
@@ -26,7 +26,8 @@ const config = {
   ...JSON.parse(await readFile(configPath, "utf8")),
 };
 
-const encoder = makeEncoder(config);
+const { name: encoderName, encoder } = await makeEncoder(config, log);
+log(`video encoder: ${encoderName}`);
 const streamer = new Streamer(new Client());
 
 // State of whatever is currently playing.
@@ -226,14 +227,19 @@ async function play(msg, input) {
     logLevel: "error",
   }, controller.signal);
 
+  // ffmpeg's own error is the useful one; the stream error that follows it is
+  // just "no data". Keep it so the Discord message can show the real cause.
+  let ffmpegError = null;
   command.on("error", (err) => {
-    if (!controller.signal.aborted) log("ffmpeg error:", err.message);
+    if (controller.signal.aborted) return;
+    ffmpegError = err.message;
+    log("ffmpeg error:", err.message);
   });
 
   const entry = { file, controller, audio, startedAt: Date.now(), duration, passthrough };
   current = entry;
 
-  const mode = passthrough ? "direct, no re-encode" : `re-encoding with ${config.encoder}`;
+  const mode = passthrough ? "direct, no re-encode" : `re-encoding with ${encoderName}`;
   await msg.reply(`▶️ Streaming **${path.basename(file)}** (${formatTime(duration)}, ${mode})`).catch(() => {});
   log(`starting stream (${mode})`);
 
@@ -245,12 +251,15 @@ async function play(msg, input) {
       await msg.channel.send(`⏹️ Finished **${path.basename(file)}**`).catch(() => {});
       if (config.leaveWhenDone) streamer.leaveVoice();
     })
-    .catch((err) => {
+    .catch(async (err) => {
       if (controller.signal.aborted) return; // stopped on purpose
       log("stream error:", err?.message ?? err);
       if (current === entry) current = null;
+      // Give ffmpeg's error event a moment to arrive if it hasn't yet.
+      if (!ffmpegError) await new Promise((r) => setTimeout(r, 500));
       controller.abort();
-      msg.channel.send(`⚠️ Stream failed: ${err?.message ?? err}`).catch(() => {});
+      const reason = (ffmpegError ?? err?.message ?? String(err)).slice(0, 1500);
+      msg.channel.send(`⚠️ Stream failed: ${reason}`).catch(() => {});
     });
 }
 
@@ -336,7 +345,7 @@ streamer.client.on("messageCreate", async (msg) => {
         const elapsed = (Date.now() - current.startedAt) / 1000;
         await msg.reply(
           `▶️ **${path.basename(current.file)}** – ${formatTime(elapsed)} / ${formatTime(current.duration)}` +
-            (current.passthrough ? " (direct)" : ` (re-encoding with ${config.encoder})`),
+            (current.passthrough ? " (direct)" : ` (re-encoding with ${encoderName})`),
         );
         break;
       }

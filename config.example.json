@@ -6,7 +6,7 @@
   "mediaDir": "/home/pi/videos",
   "restrictToMediaDir": false,
 
-  "encoder": "v4l2m2m",
+  "encoder": "auto",
   "hardwareDecoding": true,
   "width": 1280,
   "height": 720,

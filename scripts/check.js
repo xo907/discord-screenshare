@@ -51,10 +51,11 @@ try {
   const { stdout: encoders } = await run("ffmpeg", ["-hide_banner", "-encoders"]);
   ok("ffmpeg installed");
   const { stdout: filters } = await run("ffmpeg", ["-hide_banner", "-filters"]);
-  const enc = config?.encoder ?? "v4l2m2m";
-  const needed = { v4l2m2m: "h264_v4l2m2m", software: "libx264", nvenc: "h264_nvenc", vaapi: "h264_vaapi" }[enc];
-  if (needed && encoders.includes(needed)) ok(`encoder ${needed} available`);
-  else bad(`encoder ${needed ?? enc} not available in this ffmpeg build`);
+  const { makeEncoder } = await import("../src/encoders.js");
+  const { name } = await makeEncoder({ fps: 30, ...config }, (m) => warn(m));
+  if (name !== "software") ok(`using hardware encoder ${name}`);
+  else if (encoders.includes("libx264")) ok("using software encoder libx264");
+  else bad("no usable H.264 encoder (ffmpeg lacks libx264)");
   if (!encoders.includes("libopus")) bad("ffmpeg lacks libopus (needed for audio)");
   if (filters.includes("azmq")) ok("azmq filter available (live volume control)");
   else warn("ffmpeg lacks the azmq filter: streaming works but !volume won't");

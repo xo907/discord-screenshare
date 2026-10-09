@@ -83,7 +83,7 @@ This writes `<name>.stream.mp4` next to each file and skips files that are alrea
 | --- | --- | --- |
 | `width` / `height` / `fps` | 1280 / 720 / 30 | Max output size. Without Nitro, Go Live viewers are capped at 720p30 anyway. With Nitro, 1920/1080/30 works if files are pre-converted. |
 | `bitrateKbps` / `maxBitrateKbps` | 3000 / 4500 | Video bitrate. Needs about this much **upload** speed. |
-| `encoder` | `v4l2m2m` | `v4l2m2m` (Pi hardware), `software` (x264, for PCs), `nvenc` (NVIDIA), `vaapi` (Intel/AMD on Linux) |
+| `encoder` | `auto` | `auto` (Pi hardware encoder if present, otherwise software), `v4l2m2m` (Pi hardware), `software` (x264), `nvenc` (NVIDIA), `vaapi` (Intel/AMD on Linux). Falls back to `software` if the chosen one isn't usable. |
 | `hardwareDecoding` | `true` | Lets FFmpeg use hardware decoding when re-encoding |
 | `restrictToMediaDir` | `false` | If `true`, `!play` refuses files outside `mediaDir` |
 | `leaveWhenDone` | `false` | Leave the call when a video finishes |
