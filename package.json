@@ -1,0 +1,23 @@
+{
+  "name": "discord-screenshare",
+  "version": "1.0.0",
+  "description": "Streams local video files into a Discord voice channel via Go Live. Built to run on a Raspberry Pi 4.",
+  "type": "module",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "prepare-video": "node scripts/prepare.js",
+    "check": "node scripts/check.js"
+  },
+  "engines": {
+    "node": ">=22.4.0"
+  },
+  "dependencies": {
+    "@dank074/discord-video-stream": "^7.0.0",
+    "@lng2004/discord.js-selfbot-v13": "^3.7.2"
+  },
+  "allowScripts": {
+    "node-av@6.1.1": true,
+    "zeromq@6.8.0": true
+  }
+}

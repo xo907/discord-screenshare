@@ -1,0 +1,20 @@
+{
+  "token": "PASTE_THE_SPARE_ACCOUNT_TOKEN_HERE",
+  "prefix": "!",
+  "allowedUsers": ["YOUR_OWN_DISCORD_USER_ID"],
+
+  "mediaDir": "/home/pi/videos",
+  "restrictToMediaDir": false,
+
+  "encoder": "v4l2m2m",
+  "hardwareDecoding": true,
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "bitrateKbps": 3000,
+  "maxBitrateKbps": 4500,
+  "audioBitrateKbps": 128,
+
+  "leaveWhenDone": false,
+  "ffprobePath": "ffprobe"
+}
