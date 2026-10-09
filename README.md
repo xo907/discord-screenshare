@@ -38,12 +38,12 @@ For the smoothest result, convert your videos ahead of time with `npm run prepar
    ```bash
    npm run check
    ```
-   If it says **node-datachannel needs compiling** (Raspberry Pi OS Bookworm, whose system libraries are older than the prebuilt module expects), build it on the Pi once. This takes about 10–20 minutes:
+   If it says **node-datachannel needs compiling** (older OSes such as Raspberry Pi OS Bookworm or Ubuntu 22.04, whose system libraries are older than the prebuilt module expects), build it on the Pi once. This takes about 10–20 minutes:
    ```bash
    sudo apt install -y cmake build-essential libssl-dev
    npm run build-native
    ```
-   Re-run it after any `npm install` that updates the streaming library. On Raspberry Pi OS Trixie or newer this step isn't needed.
+   It skips itself if a working build already exists, and cancelling halfway is safe. After an `npm install` that updates the streaming library, run `npm run build-native -- --force`. On Raspberry Pi OS Trixie or Ubuntu 24.04+ this step isn't needed.
 6. Try it in the foreground first with `npm start` (Ctrl+C to stop). Once it works, install it as a service so it starts on boot and restarts if it crashes:
    ```bash
    npm run install-service
