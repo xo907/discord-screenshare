@@ -44,12 +44,35 @@ function formatTime(seconds) {
   return h ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
+async function isFile(p) {
+  try {
+    return (await stat(p)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// Accepts paths typed the way a shell would want them: wrapped in quotes,
+// quoted per folder ('a b'/'c d.mkv'), or with backslash-escaped spaces.
+// Tries the literal text first so names containing real quotes still work.
+async function unquotePath(input, base) {
+  const raw = input.trim();
+  const candidates = [
+    raw.replace(/^(["'])(.*)\1$/, "$2"),
+    raw.replace(/(^|\/)(["'])(.*?)\2(?=\/|$)/g, "$1$3").replace(/\\(.)/g, "$1"),
+    raw.replace(/["']/g, "").replace(/\\(.)/g, "$1"),
+  ];
+  for (const c of candidates) {
+    if (await isFile(path.resolve(base, c))) return c;
+  }
+  return candidates[1];
+}
+
 // Turns what the user typed into an absolute path, or throws a friendly error.
 async function resolveMedia(input) {
-  const cleaned = input.trim().replace(/^["']|["']$/g, "");
-  if (!cleaned) throw new Error("Give me a file path, e.g. `" + config.prefix + "play movie.mp4`");
+  if (!input.trim()) throw new Error("Give me a file path, e.g. `" + config.prefix + "play movie.mp4`");
   const base = config.mediaDir || process.cwd();
-  const full = path.resolve(base, cleaned);
+  const full = path.resolve(base, await unquotePath(input, base));
   if (config.restrictToMediaDir && config.mediaDir) {
     const rel = path.relative(path.resolve(config.mediaDir), full);
     if (rel.startsWith("..") || path.isAbsolute(rel)) {
@@ -185,17 +208,26 @@ const HELP = (p) => [
   `\`${p}list [folder]\` – list videos in the media folder`,
 ].join("\n");
 
+const COMMANDS = new Set(["play", "stop", "leave", "now", "volume", "list", "help"]);
+
 streamer.client.on("ready", () => {
   log(`logged in as ${streamer.client.user.tag}`);
+  log(`listening for "${config.prefix}" commands from: ${config.allowedUsers.join(", ") || "(nobody: allowedUsers is empty)"}`);
 });
 
 streamer.client.on("messageCreate", async (msg) => {
   if (!msg.content?.startsWith(config.prefix)) return;
-  if (!config.allowedUsers.includes(msg.author.id)) return;
 
   const body = msg.content.slice(config.prefix.length);
   const [name] = body.split(/\s+/, 1);
   const args = body.slice(name.length).trim();
+  if (!COMMANDS.has(name.toLowerCase())) return;
+
+  if (!config.allowedUsers.includes(msg.author.id)) {
+    log(`ignored "${config.prefix}${name}" from ${msg.author.tag} (${msg.author.id}): not in allowedUsers`);
+    return;
+  }
+  log(`command from ${msg.author.tag}: ${msg.content}`);
 
   try {
     switch (name.toLowerCase()) {
