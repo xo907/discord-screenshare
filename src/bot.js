@@ -28,6 +28,14 @@ const config = {
 
 const { name: encoderName, encoder } = await makeEncoder(config, log);
 log(`video encoder: ${encoderName}`);
+
+// WSL has no usable GPU decode path for ffmpeg; "-hwaccel auto" there is at
+// best wasted effort and at worst a failed stream.
+const isWsl = await readFile("/proc/version", "utf8")
+  .then((v) => /microsoft/i.test(v))
+  .catch(() => false);
+const hardwareDecoding = config.hardwareDecoding && !isWsl;
+if (config.hardwareDecoding && isWsl) log("running under WSL: hardware decoding disabled");
 const streamer = new Streamer(new Client());
 
 // State of whatever is currently playing.
@@ -222,7 +230,7 @@ async function play(msg, input) {
     bitrateVideo: config.bitrateKbps,
     bitrateVideoMax: config.maxBitrateKbps,
     bitrateAudio: config.audioBitrateKbps,
-    hardwareAcceleratedDecoding: !passthrough && config.hardwareDecoding,
+    hardwareAcceleratedDecoding: !passthrough && hardwareDecoding,
     videoCodec: Utils.normalizeVideoCodec("H264"),
     logLevel: "error",
   }, controller.signal);
