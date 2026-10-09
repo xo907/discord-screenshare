@@ -1,7 +1,15 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-const run = promisify(execFile);
+const execFileAsync = promisify(execFile);
+
+// ffprobe can stall on slow or network-mounted drives; never wait forever.
+const PROBE_TIMEOUT_MS = 20_000;
+const run = (cmd, args, opts = {}) =>
+  execFileAsync(cmd, args, { timeout: PROBE_TIMEOUT_MS, killSignal: "SIGKILL", ...opts }).catch((err) => {
+    if (err.killed) throw new Error(`ffprobe took longer than ${PROBE_TIMEOUT_MS / 1000}s (slow drive?)`);
+    throw err;
+  });
 
 // Longest gap between keyframes that still counts as "stream-ready".
 // Discord copes fine with ~2s; much longer makes viewers wait to see a picture.
@@ -41,12 +49,12 @@ export async function probe(file, ffprobePath = "ffprobe") {
 }
 
 // Reads packet flags (no decoding, so it's cheap even on a Pi) for the first
-// 30 seconds and returns the biggest gap between keyframes.
+// 10 seconds and returns the biggest gap between keyframes.
 async function maxKeyframeGap(file, ffprobePath) {
   const { stdout } = await run(ffprobePath, [
     "-v", "error",
     "-select_streams", "v:0",
-    "-read_intervals", "%+30",
+    "-read_intervals", "%+10",
     "-show_entries", "packet=pts_time,flags",
     "-of", "csv=p=0",
     file,

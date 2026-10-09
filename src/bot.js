@@ -44,9 +44,10 @@ function formatTime(seconds) {
   return h ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
+// Network/FUSE drives can hang on stat(); give up after a few seconds.
 async function isFile(p) {
   try {
-    return (await stat(p)).isFile();
+    return (await withTimeout(stat(p), 10_000, "timeout")).isFile();
   } catch {
     return false;
   }
@@ -81,8 +82,9 @@ async function resolveMedia(input) {
   }
   let info;
   try {
-    info = await stat(full);
-  } catch {
+    info = await withTimeout(stat(full), 10_000, "timeout");
+  } catch (err) {
+    if (err.message === "timeout") throw new Error(`The drive holding \`${full}\` isn't responding.`);
     throw new Error(`File not found: \`${full}\``);
   }
   if (!info.isFile()) throw new Error(`Not a file: \`${full}\``);
@@ -101,6 +103,16 @@ function findUserVoiceChannel(msg) {
   return null;
 }
 
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function stopCurrent() {
   if (!current) return false;
   current.controller.abort();
@@ -112,28 +124,34 @@ async function play(msg, input) {
   const file = await resolveMedia(input);
   const channel = findUserVoiceChannel(msg);
   if (!channel) throw new Error("Join a voice channel first, then run the command again.");
+  log(`found file ${file}, user is in ${channel.guild.name} / ${channel.name}`);
+  const loading = msg.reply(`⏳ Loading **${path.basename(file)}**…`).catch(() => null);
 
-  // Cheap check (no decoding) for whether the file can be sent without re-encoding.
-  let passthrough = false;
-  let duration = 0;
-  try {
-    const check = await checkPassthrough(file, config);
-    passthrough = check.ok;
-    duration = check.info?.duration ?? 0;
-    log(passthrough ? "passthrough:" : `transcoding (${check.reason}):`, file);
-  } catch (err) {
-    log("ffprobe failed, falling back to transcoding:", err.message);
-  }
+  // Join the call and inspect the file at the same time.
+  // The check is cheap (no decoding) and decides whether we can skip re-encoding.
+  const probing = checkPassthrough(file, config)
+    .then((check) => {
+      log(check.ok ? "passthrough:" : `transcoding (${check.reason}):`, file);
+      return { passthrough: check.ok, duration: check.info?.duration ?? 0 };
+    })
+    .catch((err) => {
+      log("ffprobe failed, falling back to transcoding:", err.message);
+      return { passthrough: false, duration: 0 };
+    });
 
   stopCurrent();
 
   if (streamer.voiceConnection?.channelId !== channel.id) {
     log(`joining ${channel.guild.name} / ${channel.name}`);
-    await streamer.joinVoice(channel.guild.id, channel.id);
+    await withTimeout(streamer.joinVoice(channel.guild.id, channel.id), 20_000, "Timed out joining the voice channel.");
     if (channel instanceof StageChannel) {
       await streamer.client.user.voice.setSuppressed(false);
     }
+    log("joined voice");
   }
+
+  const { passthrough, duration } = await probing;
+  (await loading)?.delete().catch(() => {});
 
   const controller = new AbortController();
   const { command, output, controller: audio } = prepareStream(file, {
@@ -159,6 +177,7 @@ async function play(msg, input) {
 
   const mode = passthrough ? "direct, no re-encode" : `re-encoding with ${config.encoder}`;
   await msg.reply(`▶️ Streaming **${path.basename(file)}** (${formatTime(duration)}, ${mode})`).catch(() => {});
+  log(`starting stream (${mode})`);
 
   playStream(output, streamer, { type: "go-live" }, controller.signal)
     .then(async () => {
