@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node src/bot.js",
     "prepare-video": "node scripts/prepare.js",
-    "check": "node scripts/check.js"
+    "check": "node scripts/check.js",
+    "build-native": "bash scripts/build-native.sh",
+    "install-service": "bash scripts/install-service.sh"
   },
   "engines": {
     "node": ">=22.4.0"

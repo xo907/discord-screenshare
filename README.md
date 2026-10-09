@@ -38,13 +38,17 @@ For the smoothest result, convert your videos ahead of time with `npm run prepar
    ```bash
    npm run check
    ```
-6. Run it with `npm start`, or install it as a service so it starts on boot:
+   If it says **node-datachannel needs compiling** (Raspberry Pi OS Bookworm, whose system libraries are older than the prebuilt module expects), build it on the Pi once. This takes about 10–20 minutes:
    ```bash
-   sudo cp discord-screenshare.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now discord-screenshare
+   sudo apt install -y cmake build-essential libssl-dev
+   npm run build-native
    ```
-   Edit `User=` / `WorkingDirectory=` in the service file first if your username or path differ.
+   Re-run it after any `npm install` that updates the streaming library. On Raspberry Pi OS Trixie or newer this step isn't needed.
+6. Try it in the foreground first with `npm start` (Ctrl+C to stop). Once it works, install it as a service so it starts on boot and restarts if it crashes:
+   ```bash
+   npm run install-service
+   ```
+   Logs: `journalctl -u discord-screenshare -f`. Don't run `npm start` while the service is running, or you'll have two copies fighting over the account.
 
 ## Using it
 
