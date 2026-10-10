@@ -15,6 +15,7 @@
   "maxBitrateKbps": 4500,
   "audioBitrateKbps": 128,
 
+  "bufferSeconds": 10,
   "leaveWhenDone": false,
   "ffprobePath": "ffprobe"
 }

@@ -86,11 +86,13 @@ This writes `<name>.stream.mp4` next to each file and skips files that are alrea
 | `encoder` | `auto` | `auto` (Pi hardware encoder if present, otherwise software), `v4l2m2m` (Pi hardware), `software` (x264), `nvenc` (NVIDIA), `vaapi` (Intel/AMD on Linux). Falls back to `software` if the chosen one isn't usable. |
 | `hardwareDecoding` | `true` | Lets FFmpeg use hardware decoding when re-encoding |
 | `restrictToMediaDir` | `false` | If `true`, `!play` refuses files outside `mediaDir` |
+| `bufferSeconds` | 10 | How far ahead of playback FFmpeg may work, to absorb slow disk reads and CPU spikes. Higher is smoother, but `!volume` changes take this long to be heard. |
 | `leaveWhenDone` | `false` | Leave the call when a video finishes |
 
 ## Troubleshooting
 
 - **Stuttering when re-encoding:** pre-convert the file, or lower `height` / `bitrateKbps`. Run `vcgencmd get_throttled`: anything other than `0x0` means the Pi is underpowered or overheating. Use the official 5V/3A PSU and a heatsink or fan.
+- **Finding the cause of stutter:** while playing, the bot logs `buffer: …MB (~Ns ahead)` every 15s. If it sits near **0s**, the source drive or the CPU can't keep up: play from a local disk, or pre-convert. If it stays near `bufferSeconds` but viewers still see stutter, the bottleneck is your **upload** to Discord: lower `bitrateKbps`, or use Ethernet.
 - **Stuttering on direct playback:** almost always network. Use Ethernet and check your upload speed.
 - **Logs:** `journalctl -u discord-screenshare -f` when running as a service. For very detailed library logs, start with `DEBUG=* npm start`.
 - **Subtitles** aren't shown. If you need them, burn them in when converting, e.g. with ffmpeg's `subtitles=` filter.

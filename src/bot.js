@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { Client, StageChannel } from "@lng2004/discord.js-selfbot-v13";
 import { Streamer, Utils, prepareStream, playStream } from "@dank074/discord-video-stream";
 import { checkPassthrough } from "./probe.js";
@@ -22,6 +23,7 @@ const config = {
   maxBitrateKbps: 4500,
   audioBitrateKbps: 128,
   leaveWhenDone: false,
+  bufferSeconds: 10,
   ffprobePath: "ffprobe",
   ...JSON.parse(await readFile(configPath, "utf8")),
 };
@@ -185,11 +187,11 @@ async function play(msg, input) {
   const probing = checkPassthrough(file, config)
     .then((check) => {
       log(check.ok ? "passthrough:" : `transcoding (${check.reason}):`, file);
-      return { passthrough: check.ok, duration: check.info?.duration ?? 0 };
+      return { passthrough: check.ok, duration: check.info?.duration ?? 0, fileKbps: check.info?.bitrateKbps ?? 0 };
     })
     .catch((err) => {
       log("ffprobe failed, falling back to transcoding:", err.message);
-      return { passthrough: false, duration: 0 };
+      return { passthrough: false, duration: 0, fileKbps: 0 };
     });
 
   stopCurrent();
@@ -217,7 +219,7 @@ async function play(msg, input) {
     log("joined voice");
   }
 
-  const { passthrough, duration } = await probing;
+  const { passthrough, duration, fileKbps } = await probing;
   (await loading)?.delete().catch(() => {});
 
   const controller = new AbortController();
@@ -251,7 +253,27 @@ async function play(msg, input) {
   await msg.reply(`▶️ Streaming **${path.basename(file)}** (${formatTime(duration)}, ${mode})`).catch(() => {});
   log(`starting stream (${mode})`);
 
-  playStream(output, streamer, { type: "go-live" }, controller.signal)
+  // Jitter buffer: lets ffmpeg run ahead of playback so a slow disk read or a
+  // CPU spike doesn't reach viewers as a stutter. Without it ffmpeg can only
+  // get a few KB ahead. Sized in seconds of video; the trade-off is that
+  // !volume changes take up to that long to be heard.
+  const kbps = (passthrough ? fileKbps || config.maxBitrateKbps : config.bitrateKbps) + config.audioBitrateKbps;
+  const buffered = new PassThrough({ highWaterMark: Math.round((config.bufferSeconds * kbps * 1000) / 8) });
+  output.pipe(buffered);
+  controller.signal.addEventListener("abort", () => buffered.destroy(), { once: true });
+
+  // Every 15s, log how far ahead ffmpeg is. Near 0s for long stretches means
+  // the source drive or CPU can't keep up; a full buffer with choppy playback
+  // means the problem is the upload to Discord.
+  const monitor = setInterval(() => {
+    const ahead = (buffered.readableLength * 8) / (kbps * 1000);
+    log(`buffer: ${(buffered.readableLength / 1e6).toFixed(1)}MB (~${ahead.toFixed(0)}s ahead)`);
+  }, 15_000);
+  const stopMonitor = () => clearInterval(monitor);
+  controller.signal.addEventListener("abort", stopMonitor, { once: true });
+
+  playStream(buffered, streamer, { type: "go-live" }, controller.signal)
+    .finally(stopMonitor)
     .then(async () => {
       if (current !== entry) return;
       current = null;
